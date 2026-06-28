@@ -32,6 +32,9 @@ class AddProviderActivity : AppCompatActivity() {
             if (name.isBlank() || phone.isBlank() || password.isBlank()) {
                 return@setOnClickListener Toast.makeText(this, R.string.fill_all_fields, Toast.LENGTH_SHORT).show()
             }
+            if (!name.all { it.isLetter() || it.isWhitespace() }) {
+        return@setOnClickListener Toast.makeText(this, "Name can only contain letters.", Toast.LENGTH_SHORT).show()
+    }
             val result = db.addProvider(name, phone, spinner.selectedItem.toString(), password)
             if (result > 0) {
                 Toast.makeText(this, R.string.provider_added, Toast.LENGTH_SHORT).show()
