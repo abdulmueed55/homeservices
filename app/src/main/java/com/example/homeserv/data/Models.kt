@@ -1,6 +1,6 @@
 package com.example.homeserv.data
 
-data class User(val id: Int, val name: String, val phone: String, val role: String)
+data class User(val id: Int, val name: String, val phone: String, val role: String, val isBlocked: Boolean = false)
 
 data class Provider(
     val id: Int,
