@@ -25,7 +25,8 @@ class DBHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_V
                 name TEXT NOT NULL,
                 phone TEXT NOT NULL UNIQUE,
                 password TEXT NOT NULL,
-                role TEXT NOT NULL
+                role TEXT NOT NULL,
+                is_blocked INTEGER NOT NULL DEFAULT 0
             )
         """.trimIndent())
         db.execSQL("""
@@ -117,39 +118,64 @@ class DBHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_V
 
     private fun insertUser(db: SQLiteDatabase, name: String, phone: String, password: String, role: String): Long {
         val values = ContentValues().apply {
-            put("name", name); put("phone", phone); put("password", password); put("role", role)
+            put("name", name); put("phone", phone); put("password", password); put("role", role); put("is_blocked", 0)
         }
         return db.insert("users", null, values)
     }
 
     fun loginUser(phone: String, password: String): User? {
         val c = readableDatabase.rawQuery(
-            "SELECT id,name,phone,role FROM users WHERE phone=? AND password=? LIMIT 1",
+            "SELECT id,name,phone,role,is_blocked FROM users WHERE phone=? AND password=? LIMIT 1",
             arrayOf(phone, password)
         )
-        c.use { return if (it.moveToFirst()) it.toUser() else null }
+        c.use {
+            if (it.moveToFirst()) {
+                val user = it.toUser()
+                if (user.isBlocked) return null  // blocked user cannot login
+                return user
+            }
+            return null
+        }
     }
 
     fun getUserById(userId: Int): User? {
-        val c = readableDatabase.rawQuery("SELECT id,name,phone,role FROM users WHERE id=?", arrayOf(userId.toString()))
+        val c = readableDatabase.rawQuery("SELECT id,name,phone,role,is_blocked FROM users WHERE id=?", arrayOf(userId.toString()))
         c.use { return if (it.moveToFirst()) it.toUser() else null }
     }
 
     fun getCustomers(): List<User> {
         val list = mutableListOf<User>()
-        val c = readableDatabase.rawQuery("SELECT id,name,phone,role FROM users WHERE role=? ORDER BY name", arrayOf(Roles.CUSTOMER))
+        val c = readableDatabase.rawQuery("SELECT id,name,phone,role,is_blocked FROM users WHERE role=? ORDER BY name", arrayOf(Roles.CUSTOMER))
         c.use { while (it.moveToNext()) list.add(it.toUser()) }
         return list
     }
 
-    fun addProvider(name: String, phone: String, serviceType: String, userId: Int?): Long {
+    fun getAllUsers(): List<User> {
+        val list = mutableListOf<User>()
+        val c = readableDatabase.rawQuery(
+            "SELECT id,name,phone,role,is_blocked FROM users WHERE role != ? ORDER BY role, name",
+            arrayOf(Roles.ADMIN)
+        )
+        c.use { while (it.moveToNext()) list.add(it.toUser()) }
+        return list
+    }
+
+    fun setUserBlocked(userId: Int, blocked: Boolean): Int {
+        val values = ContentValues().apply { put("is_blocked", if (blocked) 1 else 0) }
+        return writableDatabase.update("users", values, "id=?", arrayOf(userId.toString()))
+    }
+
+    fun addProvider(name: String, phone: String, serviceType: String, password: String): Long {
         val db = writableDatabase
         db.beginTransaction()
         return try {
-            val providerId = insertProvider(db, name, phone, serviceType, userId)
-            if (providerId > 0) insertDefaultOfferForProvider(db, providerId.toInt(), serviceType)
+            val userId = insertUser(db, name, phone, password, Roles.PROVIDER)
+            if (userId > 0) {
+                val providerId = insertProvider(db, name, phone, serviceType, userId.toInt())
+                if (providerId > 0) insertDefaultOfferForProvider(db, providerId.toInt(), serviceType)
+            }
             db.setTransactionSuccessful()
-            providerId
+            userId
         } finally {
             db.endTransaction()
         }
@@ -321,7 +347,8 @@ class DBHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_V
 
     private fun Cursor.toUser(): User = User(
         getInt(getColumnIndexOrThrow("id")), getString(getColumnIndexOrThrow("name")),
-        getString(getColumnIndexOrThrow("phone")), getString(getColumnIndexOrThrow("role"))
+        getString(getColumnIndexOrThrow("phone")), getString(getColumnIndexOrThrow("role")),
+        getInt(getColumnIndexOrThrow("is_blocked")) == 1
     )
 
     private fun Cursor.toProvider(): Provider {
@@ -342,7 +369,7 @@ class DBHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_V
 
     companion object {
         private const val DB_NAME = "homeserv.db"
-        private const val DB_VERSION = 2
+        private const val DB_VERSION = 3
         private const val DEFAULT_PROVIDER_SERVICE = "General Service"
     }
 }
