@@ -99,6 +99,7 @@ class AuthActivity : AppCompatActivity() {
     private fun register() {
         val name = nameInput.text.toString().trim(); val phone = phoneInput.text.toString().trim(); val pass = passwordInput.text.toString().trim()
         if (name.isBlank() || phone.isBlank() || pass.isBlank()) return toast(getString(R.string.fill_all_fields))
+        if (!name.all { it.isLetter() || it.isWhitespace() }) return toast("Name can only contain letters.")
         val passwordError = validateStrongPassword(pass)
         if (passwordError != null) {
             passwordLayout.error = passwordError
